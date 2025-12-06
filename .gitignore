@@ -1,0 +1,21 @@
+# Python / Jupyter
+__pycache__/
+*.py[cod]
+.ipynb_checkpoints/
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# IDE Settings
+.vscode/
+.idea/
+
+# SECURITY - NEVER COMMIT THESE
+kaggle.json
+oracle_key
+oracle_key.pub
+.env
