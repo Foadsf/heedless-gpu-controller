@@ -58,64 +58,83 @@ The goal is to snag an "Always Free" VM. While the Ampere A1 (ARM) instances are
 Once the instance status is **Green (Running)**, grab the Public IP and connect:
 ```bash
 ssh -i /path/to/private/key ubuntu@YOUR_PUBLIC_IP
-````
 
------
-
-## Phase 2: Configuration
-
-Since we used the "Minimal" image, we need to install the basics.
-
-```bash
-# 1. Update and install Python/Pip
-sudo apt update
-sudo apt install python3-pip unzip -y
-
-# 2. Install Kaggle CLI
-pip3 install kaggle
-
-# 3. Add local bin to PATH (so you can type 'kaggle' instead of the full path)
-echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
-source ~/.bashrc
 ```
 
------
+---
+
+## Phase 2: Configuration & Future-Proofing
+
+The "Minimal" image saves RAM but lacks critical tools. We must install them manually.
+
+**CRITICAL:** We also install the **Oracle Cloud Agent** and enable permissions. This safeguards you against losing your SSH key by allowing you to inject new keys via the OCI Web Console ("Run Command" feature).
+
+```bash
+# 1. Update and install Python/Pip/Git/Snap
+sudo apt update
+sudo apt install python3-pip unzip git snapd -y
+
+# 2. Install Oracle Cloud Agent (Crucial for recovery)
+sudo snap install oracle-cloud-agent --classic
+sudo snap start oracle-cloud-agent
+
+# 3. Allow Agent to run sudo (Required for OCI "Run Command")
+echo "ocarun ALL=(ALL) NOPASSWD:ALL" | sudo tee /etc/sudoers.d/101-oracle-cloud-agent-run-command
+sudo chmod 440 /etc/sudoers.d/101-oracle-cloud-agent-run-command
+
+# 4. Install Kaggle CLI
+pip3 install kaggle
+
+# 5. Add local bin to PATH (so you can type 'kaggle' instead of the full path)
+echo 'export PATH=$HOME/.local/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+```
+
+---
 
 ## Phase 3: Kaggle Authentication
 
-To control the GPUs, we authenticate using an environment variable.
+To control the GPUs, we authenticate using environment variables. We use the **Legacy API Key** method as it is most reliable for the CLI.
 
-1.  **Obtain your API Token:**
-    * Go to Kaggle.com -> **Settings** -> **API** -> **Create New Token**.
-    * Copy the token string provided (e.g., `KGAT_...`). *Note: If a file downloads, you can ignore it; we only need the token string.*
+1. **Obtain your Credentials:**
+* Go to Kaggle.com -> **Settings** -> **API**.
+* Click **"Create Legacy API Key"**.
+* Open the downloaded `kaggle.json` file. It looks like: `{"username":"your_user","key":"your_hex_key"}`.
 
-2.  **Configure Environment:**
-    * Run this command to save your token permanently to your shell configuration (replace `YOUR_TOKEN_STRING` with your actual token):
 
-    ```bash
-    echo 'export KAGGLE_API_TOKEN="YOUR_TOKEN_STRING"' >> ~/.bashrc
-    source ~/.bashrc
-    ```
+2. **Configure Environment:**
+* Run these commands to save your credentials permanently to your shell configuration (replace values with the text from your file):
 
-3.  **Test:**
 
-    ```bash
-    kaggle competitions list
-    ```
+```bash
+echo 'export KAGGLE_USERNAME="your_username_here"' >> ~/.bashrc
+echo 'export KAGGLE_KEY="your_key_here"' >> ~/.bashrc
+source ~/.bashrc
 
-    *If you see a list of competitions, you are connected.*
+```
 
------
+
+3. **Test:**
+```bash
+kaggle competitions list
+
+```
+
+
+*If you see a list of competitions, you are connected.*
+
+---
 
 ## Phase 4: The GPU Workflow
 
 This is how you run code on the cloud.
 
-### 1\. Create a Script
+### 1. Create a Script
 
 Write your PyTorch/TensorFlow code in a standard `.py` file. See `examples/000_hello_gpu/main.py`.
 
-### 2\. Initialize Metadata
+### 2. Initialize Metadata
 
 Run `kaggle kernels init` to generate `kernel-metadata.json`. You **must** edit this file to enable the GPU.
 
@@ -135,38 +154,50 @@ Run `kaggle kernels init` to generate `kernel-metadata.json`. You **must** edit 
   "kernel_sources": [],
   "competition_sources": []
 }
+
 ```
 
-### 3\. The "Push" (Execute)
+### 3. Execution (The "One-Command" Method)
 
+Instead of manually pushing and checking status repeatedly, use the included automation script:
+
+1. **Make it executable:**
 ```bash
-kaggle kernels push
+chmod +x run_gpu.sh
+
 ```
 
-### 4\. Check Status & Logs
 
+2. **Run it:**
 ```bash
-# Check status
-kaggle kernels status YOUR_USERNAME/project-name
+./run_gpu.sh YOUR_USERNAME/project-name
 
-# Download logs (only works after status is COMPLETE)
-kaggle kernels output YOUR_USERNAME/project-name
-cat project-name.log
 ```
 
------
+
+*This will automatically upload your code, wait for the remote GPU to finish, and stream the logs back to your terminal.*
+
+---
 
 ## Troubleshooting
+
+### "Locked Out / Lost SSH Key"
+
+If you lose your private key, do **not** delete the VM immediately. Because we set up the Oracle Cloud Agent in Phase 2:
+
+1. Go to OCI Console -> Instance -> **Resources** -> **Run Command**.
+2. Create a command script to append your *new* public key to `~/.ssh/authorized_keys`.
+3. The agent will execute this as root/sudo, restoring your access.
 
 ### "FAILURE: No GPU detected"
 
 If the logs say CUDA is not available, it is usually because your Kaggle account is not phone verified.
 
-1.  Go to Kaggle Settings -\> **Phone Verification**.
-2.  Verify your number.
-3.  Go to any notebook on the web interface and manually switch the Accelerator to "GPU T4" once to "unlock" the feature.
-
+1. Go to Kaggle Settings -> **Phone Verification**.
+2. Verify your number.
+3. Go to any notebook on the web interface and manually switch the Accelerator to "GPU T4" once to "unlock" the feature.
 
 ### "Command not found"
 
 Run `export PATH=$HOME/.local/bin:$PATH` or add it to your `.bashrc`.
+
