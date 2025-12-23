@@ -1,9 +1,9 @@
 {
-    "id": "foadsfarimani/gpu-test",
-    "title": "GPU Test",
+    "id": "foadsfarimani/001-unsloth-phi3-finetune",
+    "title": "001 Unsloth Phi3 Finetune",
     "code_file": "main.py",
     "language": "python",
-    "kernel_type": "script",
+    "kernel_type": "notebook",
     "is_private": "true",
     "enable_gpu": "true",
     "enable_internet": "true",
