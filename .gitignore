@@ -19,3 +19,8 @@ kaggle.json
 oracle_key
 oracle_key.pub
 .env
+.kaggle_env
+access_token
+*.pem
+id_ed25519*
+id_rsa*
