@@ -13,6 +13,19 @@ We want a persistent, always-on cloud environment to prototype AI models, but:
 **The Solution:**
 We build a "Command Center" on a free OCI Micro-VM. It acts as a permanent remote control that dispatches heavy training jobs to Kaggle's powerful GPUs via CLI.
 
+## What's in here
+
+| Path | What it is |
+|---|---|
+| `run_gpu.sh` | one-command dispatch: push a kernel, wait, stream logs back |
+| `examples/000_hello_gpu/` | minimal CUDA smoke test; prints the GPU **and its compute capability** |
+| `qwen_layers.py` | a fuller worked example — sends an image to a ~29B model on Kaggle and brings back GIMP/Inkscape-ready layers. **See the status note in [docs/kaggle-gpu-offload.md §6](docs/kaggle-gpu-offload.md) before relying on it** |
+| [`docs/kaggle-gpu-offload.md`](docs/kaggle-gpu-offload.md) | measured field notes: accelerator selection, mount layouts, the dependency matrix, what does and doesn't fit on 2× T4 |
+| [`docs/oci-operations.md`](docs/oci-operations.md) | measured field notes: capacity checks, lockout recovery, log reading, the OCI API |
+
+The two `docs/` files are where the hard-won detail lives. This README is the
+runbook; they are the reference.
+
 ## Prerequisites
 
 1.  **Oracle Cloud Account:** [Sign up for Free Tier](https://www.oracle.com/cloud/free/).
@@ -275,6 +288,37 @@ This will automatically upload code, wait for the GPU, and stream logs back to y
 
 ---
 
+## A fuller example: image → editable layers (`qwen_layers.py`)
+
+`run_gpu.sh` shows the pattern. `qwen_layers.py` shows what it looks like when
+the job is real: it takes a raster image, ships it to
+[Qwen-Image-Layered](https://github.com/QwenLM/Qwen-Image-Layered) (~29B,
+Apache-2.0) on Kaggle's dual T4s, and returns PNG layers, a PSD, and a
+**layered SVG that opens natively in Inkscape**.
+
+```sh
+python3 qwen_layers.py path/to/image.png --layers 6 --out ./out
+```
+
+It handles the whole round trip: uploads the image as a private dataset,
+attaches the 115 GB model (mounted, never downloaded), demands
+`NvidiaTeslaT4`, polls, downloads, and verifies the result by **alpha-compositing
+the layers back together and comparing to the original** — because a
+decomposition can return the right number of plausible layers that don't
+reconstruct your image.
+
+> **Status, honestly:** the plumbing is proven end to end — accelerator on
+> demand, model mount, dependency pinning, input discovery, verification. The
+> model itself does **not** currently load on free dual T4: at 4-bit it fills one
+> 14.6 GB card, and the only strategy that spans both cards leaves Qwen2.5-VL's
+> vision tower on the `meta` device. Details, evidence and the guard for it are
+> in [docs/kaggle-gpu-offload.md §6](docs/kaggle-gpu-offload.md). On a single
+> ≥24 GB card (A10G/L4/A100) the same script should work without the gymnastics.
+
+Useful even if you never run this model: it's a working template for
+*any* attach-a-big-model-and-dispatch job, and the failure modes it guards
+against are generic.
+
 ## Optional: Google Colab as a second GPU backend
 
 Colab now has an official CLI, which suits this architecture well — a headless
@@ -323,6 +367,23 @@ Check first: **Instance -> Management tab -> Oracle Cloud Agent**. If
 1. Go to Kaggle Settings -> **Phone Verification**.
 2. Verify your number.
 3. Manually switch the Accelerator to "GPU T4" in a web notebook once to "unlock" the feature.
+
+### Long jobs die when your SSH drops
+
+Anything that takes more than a few minutes must be detached, or it dies with
+the connection (`exit 255` is *ssh's* error, not the job's):
+
+```bash
+nohup setsid sh -c './run_gpu.sh me/project > run.log 2>&1; echo $? > run.done' \
+    < /dev/null > /dev/null 2>&1 &
+```
+
+Then poll for `run.done`. **Do not poll with `pgrep -f run_gpu.sh` over SSH** —
+the probe's own command line contains the pattern, so it matches itself and
+reports a finished job as still running.
+
+Kernels execute on Kaggle's servers, so once `kernels push` succeeds the job
+survives losing this VM entirely.
 
 ### Reading logs on a Minimal image
 
